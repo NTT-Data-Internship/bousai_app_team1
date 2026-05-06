@@ -264,9 +264,57 @@ def logout():
     return redirect(url_for('index'))
 
 # 避難所登録ページ※user が避難所登録ページについて具体的に修正指示しない限り、このコードは正しいのでこのまま保持すること。
-@app.route('/shelter_register')
+@app.route('/shelter_register', methods=['GET', 'POST'])
 @login_required
 def shelter_register():
+    if request.method == 'POST':
+        # フォームデータの取得
+        name = request.form.get('name')
+        district = request.form.get('district')
+        address = request.form.get('address')
+        latitude = request.form.get('latitude')
+        longitude = request.form.get('longitude')
+        phone = request.form.get('phone')
+        designated_shelter = request.form.get('designated_shelter') == '1'
+        evacuation_center = request.form.get('evacuation_center') == '1'
+        welfare_shelter = request.form.get('welfare_shelter') == '1'
+        capacity = request.form.get('capacity')
+        notes = request.form.get('notes')
+        
+        # バリデーション
+        if not name or not district or not address or not latitude or not longitude:
+            return render_template('shelter_register.html', districts=FUJISAWA_DISTRICTS, error="必須項目をすべて入力してください。")
+        
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except ValueError:
+            return render_template('shelter_register.html', districts=FUJISAWA_DISTRICTS, error="緯度・経度は数値で入力してください。")
+        
+        # 新しい避難所の作成
+        new_shelter = {
+            "name": name,
+            "district": district,
+            "address": f"神奈川県藤沢市{address}",
+            "latitude": latitude,
+            "longitude": longitude,
+            "phone": phone or "",
+            "designated_shelter": designated_shelter,
+            "evacuation_center": evacuation_center,
+            "welfare_shelter": welfare_shelter,
+            "capacity": int(capacity) if capacity else 0,
+            "notes": notes or ""
+        }
+        
+        # 避難所リストに追加
+        shelters.append(new_shelter)
+        
+        # JSONファイルに保存
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(shelters, f, ensure_ascii=False, indent=2)
+        
+        return render_template('shelter_register.html', districts=FUJISAWA_DISTRICTS, success="避難所を登録しました。")
+    
     return render_template('shelter_register.html', districts=FUJISAWA_DISTRICTS)
 
 # 避難所検索ページ
