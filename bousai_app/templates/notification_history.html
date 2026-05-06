@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-container">
+  <!-- 災害情報通知履歴 -->
+  <div class="card history-card">
+    <div class="card-header">
+      <i class="fas fa-bell"></i>
+      <h2>気象警報・注意報履歴</h2>
+    </div>
+    <div class="history-description">
+      <p>過去に発表された気象警報・注意報の履歴を確認できます。</p>
+    </div>
+    
+    <!-- フィルター -->
+    <div class="filter-section">
+      <div class="filter-group">
+        <label>期間:</label>
+        <select id="periodFilter" class="filter-select">
+          <option value="all">すべて</option>
+          <option value="7days">過去7日間</option>
+          <option value="30days">過去30日間</option>
+          <option value="today">今日</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <label>種類:</label>
+        <select id="typeFilter" class="filter-select">
+          <option value="all">すべて</option>
+          <option value="emergency">特別警報</option>
+          <option value="warning">警報</option>
+          <option value="advisory">注意報</option>
+          <option value="clear">解除</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <label>並び順:</label>
+        <select id="sortOrder" class="filter-select">
+          <option value="newest">新しい順</option>
+          <option value="oldest">古い順</option>
+        </select>
+      </div>
+      
+      <button id="resetFilter" class="btn-secondary">
+        <i class="fas fa-undo"></i> フィルタリセット
+      </button>
+    </div>
+    
+    <!-- 統計情報 -->
+    <div id="statsSection" class="stats-section" style="display: none;">
+      <div class="stats-item">
+        <span class="stats-label">表示件数:</span>
+        <span id="displayCount" class="stats-value">0</span>
+      </div>
+      <div class="stats-item">
+        <span class="stats-label">総件数:</span>
+        <span id="totalCount" class="stats-value">0</span>
+      </div>
+    </div>
+    
+    <!-- 履歴リスト -->
+    <div id="historyList" class="history-list">
+      <div class="loading" id="loadingSpinner">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>履歴を読み込み中...</span>
+      </div>
+    </div>
+    
+    <!-- 履歴がない場合のメッセージ -->
+    <div id="noHistoryMessage" class="no-history" style="display: none;">
+      <i class="fas fa-info-circle"></i>
+      <p>表示する履歴がありません。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const historyList = document.getElementById('historyList');
+  const loadingSpinner = document.getElementById('loadingSpinner');
+  const noHistoryMessage = document.getElementById('noHistoryMessage');
+  const periodFilter = document.getElementById('periodFilter');
+  const typeFilter = document.getElementById('typeFilter');
+  const sortOrder = document.getElementById('sortOrder');
+  const resetFilter = document.getElementById('resetFilter');
+  const statsSection = document.getElementById('statsSection');
+  const displayCount = document.getElementById('displayCount');
+  const totalCount = document.getElementById('totalCount');
+  
+  let allHistoryData = [];
+  
+  // 履歴データを取得
+  function loadHistory() {
+    fetch('/api/warning_history')
+      .then(response => response.json())
+      .then(data => {
+        allHistoryData = data.history || [];
+        // データを日付順（新しい順）にソート
+        allHistoryData.sort((a, b) => {
+          const dateA = parseCustomDate(a.timestamp);
+          const dateB = parseCustomDate(b.timestamp);
+          return dateB.getTime() - dateA.getTime(); // 新しい順
+        });
+        
+        // 統計情報を更新
+        totalCount.textContent = allHistoryData.length;
+        statsSection.style.display = 'flex';
+        
+        renderHistory(allHistoryData);
+        loadingSpinner.style.display = 'none';
+      })
+      .catch(error => {
+        console.error('履歴の取得に失敗しました:', error);
+        loadingSpinner.style.display = 'none';
+        showNoHistory();
+      });
+  }
+  
+  // 履歴を表示
+  function renderHistory(historyData) {
+    if (!historyData || historyData.length === 0) {
+      showNoHistory();
+      return;
+    }
+    
+    const historyHTML = historyData.map(item => createHistoryItemHTML(item)).join('');
+    historyList.innerHTML = historyHTML;
+    noHistoryMessage.style.display = 'none';
+    
+    // 表示件数を更新
+    displayCount.textContent = historyData.length;
+  }
+  
+  // 履歴がない場合の表示
+  function showNoHistory() {
+    historyList.innerHTML = '';
+    noHistoryMessage.style.display = 'block';
+    displayCount.textContent = '0';
+  }
+  
+  // 履歴アイテムのHTMLを生成
+  function createHistoryItemHTML(item) {
+    const warnings = item.warnings || [];
+    const warningBadges = warnings.map(warning => {
+      let badgeClass = 'warning-advisory';
+      if (warning.name.includes('特別警報')) {
+        badgeClass = 'warning-emergency';
+      } else if (warning.name.includes('警報') && !warning.name.includes('特別警報')) {
+        badgeClass = 'warning-warning';
+      } else if (warning.name.includes('解除')) {
+        badgeClass = 'warning-clear';
+      }
+      return `<span class="warning-badge ${badgeClass}">${warning.name}</span>`;
+    }).join('');
+    
+    return `
+      <div class="history-item">
+        <div class="history-header">
+          <div class="history-timestamp">
+            <i class="fas fa-clock"></i> 気象庁発表時刻: ${formatDate(item.report_time)}
+          </div>
+        </div>
+        <div class="warnings-list">
+          ${warningBadges || '<span class="warning-badge warning-clear">警報・注意報なし</span>'}
+          <div class="history-metadata">
+            <span><i class="fas fa-map-marker-alt"></i> ${item.area_name}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  // 日付フォーマット（カスタム日付形式の解析機能付き）
+  function parseCustomDate(dateString) {
+    if (!dateString) return new Date(0);
+    
+    // "2025年06月07日 15:30" 形式の日本語日付を解析
+    const japaneseMatch = dateString.match(/(\d{4})年(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{1,2})/);
+    if (japaneseMatch) {
+      const year = parseInt(japaneseMatch[1]);
+      const month = parseInt(japaneseMatch[2]) - 1; // 月は0ベース
+      const day = parseInt(japaneseMatch[3]);
+      const hour = parseInt(japaneseMatch[4]);
+      const minute = parseInt(japaneseMatch[5]);
+      return new Date(year, month, day, hour, minute);
+    }
+    
+    // ISO形式や一般的な形式を試す
+    const isoDate = new Date(dateString);
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate;
+    }
+    
+    // 解析失敗時は古い日付を返す
+    return new Date(0);
+  }
+  
+  // 日付フォーマット
+  function formatDate(dateString) {
+    if (!dateString || dateString === '不明') return dateString;
+    try {
+      const date = parseCustomDate(dateString);
+      if (isNaN(date.getTime()) || date.getTime() === 0) return dateString;
+      return date.toLocaleString('ja-JP');
+    } catch (e) {
+      return dateString;
+    }
+  }
+  
+  // フィルタリング
+  function applyFilters() {
+    const period = periodFilter.value;
+    const type = typeFilter.value;
+    const sort = sortOrder.value;
+    
+    let filteredData = [...allHistoryData];
+    
+    // 期間フィルター
+    if (period !== 'all') {
+      const now = new Date();
+      let filterDate;
+      
+      switch (period) {
+        case '7days':
+          filterDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30days':
+          filterDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'today':
+          filterDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+      }
+      
+      if (filterDate) {
+        filteredData = filteredData.filter(item => {
+          const itemDate = parseCustomDate(item.timestamp);
+          return itemDate >= filterDate;
+        });
+      }
+    }
+    
+    // 種類フィルター
+    if (type !== 'all') {
+      filteredData = filteredData.filter(item => {
+        const warnings = item.warnings || [];
+        switch (type) {
+          case 'emergency':
+            return warnings.some(w => w.name.includes('特別警報'));
+          case 'warning':
+            return warnings.some(w => w.name.includes('警報') && !w.name.includes('特別警報'));
+          case 'advisory':
+            return warnings.some(w => w.name.includes('注意報'));
+          case 'clear':
+            return warnings.length === 0 || warnings.some(w => w.name.includes('解除'));
+          default:
+            return true;
+        }
+      });
+    }
+    
+    // ソート
+    filteredData.sort((a, b) => {
+      const dateA = parseCustomDate(a.timestamp);
+      const dateB = parseCustomDate(b.timestamp);
+      
+      if (sort === 'oldest') {
+        return dateA.getTime() - dateB.getTime(); // 古い順
+      } else {
+        return dateB.getTime() - dateA.getTime(); // 新しい順
+      }
+    });
+    
+    renderHistory(filteredData);
+  }
+  
+  // フィルターリセット
+  function resetFilters() {
+    periodFilter.value = 'all';
+    typeFilter.value = 'all';
+    sortOrder.value = 'newest';
+    renderHistory(allHistoryData);
+  }
+  
+  // イベントリスナー
+  periodFilter.addEventListener('change', applyFilters);
+  typeFilter.addEventListener('change', applyFilters);
+  sortOrder.addEventListener('change', applyFilters);
+  resetFilter.addEventListener('click', resetFilters);
+  
+  // 初期データ読み込み
+  loadHistory();
+});
+</script>
+{% endblock %}
